@@ -42,28 +42,20 @@ func setup(c *caddy.Controller) error {
         }
     }
 
-    fmt.Printf("zone:       %v\n%", zone)
-    fmt.Printf("ldapurl:    %v\n%", ldapURL)
-    fmt.Printf("binddn:     %v\n%", binddn)
-    fmt.Printf("password:   %v\n%", password)
-    fmt.Printf("basedn:     %v\n%", basedn)
-    fmt.Println()
-    fmt.Println("Connecting...")
-
     //l, err := ldap.DialURL(ldapURL, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
     l, err := ldap.DialURL(ldapURL)
     if err != nil {
         return plugin.Error("ldapbackend", err)
     }
-    //defer l.Close()
 
     err = l.Bind(binddn, password)
     if err != nil {
         return plugin.Error("ldapbackend", err)
     }
 
+    fmt.Println(zone)
     fmt.Println("setup done!")
-    ldapbackend := LdapBackend{LdapConn: l}
+    ldapbackend := LdapBackend{LdapConn: l, BaseDn: basedn}
 
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
         ldapbackend.Next = next
