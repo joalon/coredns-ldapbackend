@@ -1,15 +1,16 @@
 package ldapbackend
 
 import (
-	"context"
 	"net"
+	"context"
 	"strings"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
+	"github.com/miekg/dns"
+
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 	ldap "github.com/go-ldap/ldap/v3"
-	"github.com/miekg/dns"
 )
 
 var log = clog.NewWithPlugin("ldapbackend")
@@ -17,7 +18,7 @@ var log = clog.NewWithPlugin("ldapbackend")
 type LdapBackend struct {
     Next        plugin.Handler
     LdapConn    *ldap.Conn
-    BaseDn  string
+    BaseDn      string
 }
 
 func (l LdapBackend) Name() string {
@@ -25,56 +26,57 @@ func (l LdapBackend) Name() string {
 }
 
 func (l LdapBackend) OnShutdown() {
-    log.Debug("Closing connection...\n")
+    log.Debug("Closing ldap connection...\n")
     l.LdapConn.Close()
 }
 
 func (l LdapBackend) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-    log.Debug("Got a question!")
+
+    // Validate
 
 
-    var (
-        ldapRecordPrefix string
-    )
-
-    switch r.Question[0].Qtype {
-    case 1:
-        log.Debug("Got A")
-        ldapRecordPrefix = "aRecord="
-    case 12:
-        log.Debug("Got PTR")
-        ldapRecordPrefix = "pTRRecord="
-    }
-
-    ldapSearchFilter := "(&(objectClass=dNSZone))"
-
+    // Search
     searchRequest := ldap.NewSearchRequest(
         l.BaseDn,
         ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
-        ldapSearchFilter,
-        []string{"dn", "cn"},
+        "(&(objectClass=dNSZone))",
+        []string{"dn", "cn", "dNSTTL", "relativeDomainName"},
         nil,
     )
 
     sr, err := l.LdapConn.Search(searchRequest)
-    if err != nil {
-            log.Fatal(err)
+    if err != nil && !ldap.IsErrorAnyOf(err, ldap.LDAPResultNoSuchObject) {
+        log.Fatal(err)
     }
 
+    // If not found: try other plugins
     if len(sr.Entries) == 0 {
+        log.Debug("Executed search and didn't find any entries")
         return plugin.NextOrFailure(l.Name(), l.Next, ctx, w, r)
     }
 
+    // If found: return result
     state := request.Request{W: w, Req: r}
-
     for _, entry := range sr.Entries {
-        //log.Debug(entry.DN, entry.GetAttributeValue("cn"))
-        log.Debug(entry.DN)
+        var ldapRecordPrefix string
+        switch r.Question[0].Qtype {
+        case dns.TypeA:
+            log.Debug("Got A")
+            ldapRecordPrefix = "aRecord="
+        case dns.TypePTR:
+            log.Debug("Got PTR")
+            ldapRecordPrefix = "pTRRecord="
+        }
 
         if strings.HasPrefix(entry.DN, ldapRecordPrefix) {
             // Found the record! Just trim it down
             tmpStrWithSuffix := strings.TrimPrefix(entry.DN, ldapRecordPrefix)
             finalIp := strings.TrimSuffix(tmpStrWithSuffix, "," + l.BaseDn)
+
+            log.Debug(entry)
+            for _, a := range entry.Attributes {
+                log.Debug(a)
+            }
 
             header := dns.RR_Header{ Name: state.QName(), Rrtype: dns.TypeA, Class: state.QClass(), Ttl: 86400}
 
