@@ -41,8 +41,7 @@ relativedomainname: ns1
 zonename: example.org
 
 # Entry 5: pTRRecord=120.0.168.192.in-addr.arpa.,aRecord=192.168.0.120,ou...
-dn: pTRRecord=120.0.168.192.in-addr.arpa.,aRecord=192.168.0.120,ou=hosts,dc=
- example,dc=org
+dn: pTRRecord=120.0.168.192.in-addr.arpa.,ou=hosts,dc=example,dc=org
 dnsttl: 86400
 objectclass: dNSZone
 objectclass: top
